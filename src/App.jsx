@@ -1,66 +1,75 @@
-import { Table,Button,Flex,Form,Popover,Input,Spin,Modal,Empty,Space} from 'antd';
+import { Table, Button, Flex, Form, Popover, Input, Modal, Space } from 'antd';
 import { useForm } from 'antd/es/form/Form';
-import { useState ,useEffect} from 'react';
+import { useState, useEffect} from 'react';
 
-export default function Books(){
-  const [books,setBooks]=useState([]);
-  const [loading,setLoading]=useState(false);
-  const [clickBookid,setClickBookid]=useState('');
+export default function Books() {
+  const [books, setBooks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchbook,setSearchbook]=useState('');
+  const [pagination,setPagination]=useState({
+    current:1,
+    pageSize:10,
+    total:0,
+    sortBy:'createdAt',
+    pageSizeOptions:[10,20,50,100],
+    showSizeChanger:true
+  })
   const url = 'http://lesson.creaverse.cc/books';
-
-  const handleclickbookid=(e)=>{
-    setClickBookid(e.id)
-  }
-
-  //修改图书
-  const modifyBook=async (upbook)=>{
-    await fetch(`${url}/${clickBookid}`,{
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(upbook),
-    }).then(response=>response.json()).then(response=>{console.log(`修改成功${JSON.stringify(response)}`)})
-    fetchshowbooks();
-  }
-  //添加图书
-  const addnewbook=async(newbook)=>{
-    await fetch(url,{
-      method:"POST",
-      headers:{
-        'Content-Type': 'application/json' 
-      },
-      body:JSON.stringify(newbook)
-    }).then(response=>response.json).then(response=>console.log(`添加成功${JSON.stringify(response)}`))
-    fetchshowbooks();
-  }
+  
+  
   //显示所有图书
   async function fetchshowbooks() {
+    const params= new URLSearchParams({
+      page: pagination.current.toString(),
+      limit: pagination.pageSize.toString(),
+      sortBy: 'title',
+      order: 'asc',
+      
+    })
+    if(searchbook){
+      params.append('search',searchbook);
+    }
     setLoading(true);
-    await fetch('http://lesson.creaverse.cc/books?page=1&limit=20').then(response => response.json())
-      .then(data => setBooks(data.data.map(e => ({
-        'id': e.id,
-        'title': e.title,
-        'author': e.author,
-        'createdAt': e.createdAt,
-        'updatedAt': e.updatedAt
-      }))))
-   .catch(err=>(console.log(err.message)))
+    await fetch(`http://lesson.creaverse.cc/books?${params}`)
+    .then(response => response.json())
+      .then(data => {
+        setPagination({
+          ...pagination,
+          total:`${data.pagination.totalItems}`
+        }
+        )
+        return (setBooks(data.data.map(e => ({
+          'id': e.id,
+          'title': e.title,
+          'author': e.author,
+          'createdAt': e.createdAt,
+          'updatedAt': e.updatedAt
+        }))))
+      })
+      .catch(err => (console.log(err.message)))
     setLoading(false);
+  }
+//页码发生变化的时候
+  const handleOnchange=(pagination)=>{
+    console.log(pagination);
+    
+    setPagination({
+     ...pagination
+    })
   }
 
   useEffect(() => {
     fetchshowbooks();
-  }, [])
+  }, [pagination.current,searchbook,pagination.pageSize])
 
-  //删除图书
-  const delbook=async()=>{
-    await fetch(`${url}/${clickBookid}`,{method:'DELETE'}).then(response=>response.json()).then(e=>console.log(`删除成功${JSON.stringify(e)}`))
-    fetchshowbooks();
-  }
-  const columns= [
+  const columns = [
     {
       title: 'id',
       dataIndex: 'id',
       key: 'id',
+      sorter:{
+        compare:(a,b)=>a.id - b.id,
+      }
     },
     {
       title: '图书',
@@ -73,23 +82,23 @@ export default function Books(){
       key: 'author',
     },
     {
-      title:'创造日期',
-      dataIndex:'createdAt',
-      key:'createdAt'
+      title: '创造日期',
+      dataIndex: 'createdAt',
+      key: 'createdAt'
     },
     {
-      title:'上次更新',
-      dataIndex:'updatedAt',
-      key:'updatedAt'
+      title: '上次更新',
+      dataIndex: 'updatedAt',
+      key: 'updatedAt'
     },
     {
-      title:'功能',
-      dataIndex:'delete',
-      key:'delete',
-      render: () => (
+      title: '功能',
+      dataIndex: 'delete',
+      key: 'delete',
+      render: (value, record) => (
         <Flex gap='middle'>
-          <ModifyBook modifyBook={modifyBook}/>
-          <DelbookPopover delbook={delbook}/>
+          <ModifyBook fetchshowbooks={fetchshowbooks} book={record} url={url} />
+          <DelbookPopover fetchshowbooks={fetchshowbooks} url={url} bookid={record.id} />
         </Flex>
       )
     }
@@ -98,60 +107,64 @@ export default function Books(){
     <div>
       <h2>图书管理系统</h2>
       <Space>
-      <Addbook addnewbook={addnewbook} />
-      <SearchBook setBooks={setBooks}></SearchBook>
+        <Addbook fetchshowbooks={fetchshowbooks} url={url} />
+        <SearchBook setSearchbook={setSearchbook} setPagination={setPagination} pagination={pagination}></SearchBook>
       </Space>
-      {loading ? (<Spin size='large' />) : (books.length > 0 ? (<Table dataSource={books} columns={columns} onRow={(date) => {
-        return {
-          onClick: () => {
-            handleclickbookid(date);
-          }
-        };
-      }} />) : (
-        <Empty></Empty>
-      ))}
+      <Table loading={loading} dataSource={books} columns={columns} pagination={pagination} onChange={handleOnchange}/>
     </div>
   )
 }
-
-//添加图书组件
-const Addbook=({addnewbook})=>{
-  const [open,setOpen]=useState(false);
+//添加图书组件 
+const Addbook = ({ fetchshowbooks, url }) => {
+  const [open, setOpen] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
-  const [newbook,setNewBook]=useState({title:'',author:''});
-  const handleCancel=()=>{
+  const [newbook, setNewBook] = useState({ title: '', author: '' });
+  const [form] = useForm();
+
+  const addnewbook = async () => {
+    await fetch(url, {
+      method: "POST",
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(newbook)
+    }).then(response => response.json).then(response => console.log(`添加成功${JSON.stringify(response)}`))
+    fetchshowbooks();
+  }
+
+  const handleCancel = () => {
     setOpen(false);
   }
-   //获取输入图书的信息
-   const onValuesChange=(changedValues, allValues)=>{
+  //获取输入图书的信息
+  const onValuesChange = (changedValues, allValues) => {
     setNewBook(allValues)
   }
-  const [form]=useForm();
-  return(
+
+  return (
     <>
-    <Button onClick={()=>{setOpen(true)}}>添加图书</Button>
+      <Button onClick={() => { setOpen(true) }}>添加图书</Button>
       <Modal
         title='添加图书'
         open={open}
         onCancel={handleCancel}
-        onOk={async ()=>{
+        onOk={async () => {
           setConfirmLoading(true);
-          await addnewbook(newbook);
+          await addnewbook();
           setConfirmLoading(false);
           handleCancel();
         }}
         confirmLoading={confirmLoading}
         destroyOnClose={true}
       >
-        <Form name={form} 
-        labelCol={{ span: 4 }}
-        onValuesChange={onValuesChange}
+        <Form name={form}
+          labelCol={{ span: 4 }}
+          onValuesChange={onValuesChange}
         >
           <Form.Item label='title' name='title'>
-            <Input />
+            <Input disabled={confirmLoading} />
           </Form.Item>
           <Form.Item label='author' name='author'>
-            <Input />
+            <Input disabled={confirmLoading} />
           </Form.Item>
         </Form>
       </Modal>
@@ -159,14 +172,19 @@ const Addbook=({addnewbook})=>{
   )
 }
 //删除图书组件
-const DelbookPopover = ({delbook}) => {
-  const [delopen,setOpendel]=useState(false);
-  const [bottonloading,setButtonloading]=useState(false);
-  const handlDelbook=()=>{
+const DelbookPopover = ({ fetchshowbooks, url, bookid }) => {
+  const [delopen, setOpendel] = useState(false);
+  const [bottonloading, setButtonloading] = useState(false);
+  const handlDelbook = () => {
     setOpendel(!delopen);
   }
-  const handleOpenChange=newopen=>{
+  const handleOpenChange = newopen => {
     setOpendel(newopen);
+  }
+
+  const delbook = async () => {
+    await fetch(`${url}/${bookid}`, { method: 'DELETE' }).then(response => response.json()).then(e => console.log(`删除成功${JSON.stringify(e)}`))
+    fetchshowbooks();
   }
   return (
     <>
@@ -192,75 +210,73 @@ const DelbookPopover = ({delbook}) => {
     </>
   )
 }
-
 //编辑图书组件
-const ModifyBook=({modifyBook})=>{
-  const [open,setOpen]=useState(false);
-  const [upbook,setUpbook]=useState({title:'',author:''});
-  const [loading,setLoading]=useState(false);
-  const [modiform]=useForm('');
+const ModifyBook = ({ fetchshowbooks, book, url }) => {
+  const [open, setOpen] = useState(false);
+  const [upbook, setUpbook] = useState({ title: '', author: '' });
+  const [loading, setLoading] = useState(false);
+  const [modiform] = useForm('');
 
-  const onCancel=()=>{
+  const modifyBook = async () => {
+    await fetch(`${url}/${book.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(upbook),
+    }).then(response => response.json()).then(response => { console.log(`修改成功${JSON.stringify(response)}`) })
+    fetchshowbooks();
+  }
+
+  const onCancel = () => {
     setOpen(false);
   }
-  const onValuesChange=(changedValues, allValues)=>{
+  const onValuesChange = (changedValues, allValues) => {
     setUpbook(allValues)
   }
-  return(
+  return (
     <>
-    <Button onClick={()=>{setOpen(true)}}>编辑</Button>
-    <Modal 
-    open={open}
-    title='修改图书'
-    onCancel={onCancel}
-    confirmLoading={loading}
-    onOk={async ()=>{
-      setLoading(true);
-      await modifyBook(upbook);
-      onCancel();
-      setLoading(false);
-      setUpbook({title:'',author:''});
-    }}
-    destroyOnClose={true}
-    >
-      <Form name={modiform}
-      onValuesChange={onValuesChange}
-      labelCol={{ span: 4 }}
+      <Button onClick={() => { setOpen(true) }}>编辑</Button>
+      <Modal
+        open={open}
+        title='修改图书'
+        onCancel={onCancel}
+        confirmLoading={loading}
+        onOk={async () => {
+          setLoading(true);
+          await modifyBook();
+          onCancel();
+          setLoading(false);
+          setUpbook({ title: '', author: '' });
+        }}
+        destroyOnClose={true}
       >
-        <Form.Item label='title' name='title'>
-          <Input disabled={loading}></Input>
-        </Form.Item>
-        <Form.Item label='author' name='author'>
-          <Input disabled={loading}></Input>
-        </Form.Item>
-      </Form>
-    </Modal>
+        <Form name={modiform}
+          onValuesChange={onValuesChange}
+          labelCol={{ span: 4 }}
+        >
+          <Form.Item label='title' name='title'>
+            <Input disabled={loading} defaultValue={book.title}></Input>
+          </Form.Item>
+          <Form.Item label='author' name='author'>
+            <Input disabled={loading} defaultValue={book.author}></Input>
+          </Form.Item>
+        </Form>
+      </Modal>
     </>
   )
 }
 //搜索组件 
-const SearchBook=({setBooks})=>{
-  const {Search}=Input;
-  const findBook=async (e)=>{
-    const params = new URLSearchParams({
-      page: '1',
-      limit: '10',
-      search: `${e}`,
-      sortBy: 'title',
-      order: 'asc'
-  });
-  await fetch(`http://lesson.creaverse.cc/books?${params}`).then(response=>response.json())
-  .then(data=>setBooks(data.data.map(e => ({
-    'id': e.id,
-    'title': e.title,
-    'author': e.author,
-    'createdAt': e.createdAt,
-    'updatedAt': e.updatedAt
-  })))).catch(err=>console.log(err.message))
-  }
-  return(
+const SearchBook = ({setSearchbook,setPagination,pagination}) => {
+  const { Search } = Input;
+  const findBook = (e) => {
+    setPagination({
+      ...pagination,
+      current:'1',
+    })
+    setSearchbook(e);
+    }
+  return (
     <>
-    <Search onSearch={(e)=>findBook(e)} style={{width:200}}></Search>
+      <Search onSearch={findBook} style={{ width: 200 }}></Search>
     </>
   )
 }
