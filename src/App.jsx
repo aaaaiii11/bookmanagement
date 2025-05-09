@@ -51,8 +51,6 @@ export default function Books() {
   }
 //页码发生变化的时候
   const handleOnchange=(pagination)=>{
-    console.log(pagination);
-    
     setPagination({
      ...pagination
     })
